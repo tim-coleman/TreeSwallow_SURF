@@ -8,19 +8,21 @@
 ####################################################################
 
 #  0. Packages, helper functions
-#  I. Introduction 
+#  I. Introduction
 #     (1) Figure 1 Code
-#  II. Data 
+#  II. Data
 #     (1) Code associated with cleaning the Tree Swallow data.
 #  III. Preliminary Models
 #     (1) Figure 2 Code
 #     (2) Figure 3 Code
 #     (3) Figure 4 Code
-#     (4) Moran's I testing Code
+#     (4) Figure 5 Code
+#     (5) Moran's I testing Code
 #  IV. Global Testing Procedure
-#     (1) Figure 5 Code
-#     (2) Figure 6 Code
-#     (3) Global Testing Code
+#     (1) Canonical Permutation Test Code
+#     (2) Functional Permuation Test Code
+#     (3) Figure 6 Code
+#     (4) Figure 7 Code
 #  V. Local Testing Procedure
 #     (1) Figure 7 Code
 #     (2) Figure 8 Code
@@ -80,8 +82,14 @@ is.between <- function(x, a, b) {
 }
 
 
+# Fuctional Permutation Test Procedure ------------------------------------
+
+## Remote Loading
+library(devtools)
+source_url("https://raw.githubusercontent.com/tim-coleman/SURFTest/master/MSE_Test_File.R")
+
 ####################################################################
-## I INTRODUCTION
+## I INTRODUCTION --------------------------------------------------
 ####################################################################
 
 
@@ -89,18 +97,18 @@ is.between <- function(x, a, b) {
 load('surfing_eBird.augmented.data.RData') #Loading the base dataset
 # ----------------------------------------------------------------------
 # BCR 30
-# ----------------------------------------------------------------------	
+# ----------------------------------------------------------------------
 png(file = paste(output.dir, "BCR.30.png",sep=""),
-    height = 1000, 
+    height = 1000,
     width = 1500)
 erd.locs.index <- (erd$locs$bcr) == 30
-sum(erd.locs.index, na.rm=T) 
+sum(erd.locs.index, na.rm=T)
 # 435,038
-map("world",xlim = c(-80, -65), 
+map("world",xlim = c(-80, -65),
     ylim = c(36,46), fill = TRUE, col = 'darkseagreen')
 points(
-  erd$locs$x[erd.locs.index], 
-  erd$locs$y[erd.locs.index], 
+  erd$locs$x[erd.locs.index],
+  erd$locs$y[erd.locs.index],
   cex=0.5,col = 'yellow')
 map("state", add=T)
 title(main = "Bird Conservation Region 30")
@@ -149,7 +157,7 @@ ts.east <- data.frame("lon"=erd$locs$x[which(erd$locs$east.region==TRUE)],
                       "y"=erd$y[which(erd$locs$east.region==TRUE),3])
 
 
-# Removing Missing Values ... 
+# Removing Missing Values ...
 # --------------------------------------------------------------
 ts.east <- ts.east[complete.cases(ts.east),]
 
@@ -181,7 +189,7 @@ save(ts.bcr30fall, file = "ts.bcr30fall.RData")
 
 
 ####################################################################
-## III PRELIMINARY MODELS
+## III PRELIMINARY MODELS -------------------------------------------
 ####################################################################
 
 
@@ -205,7 +213,7 @@ load("C:/Users/drain/OneDrive/eBird project/ts.bcr30fall.RData")
 
 # Selecting only the predictors we want, and scaling them
 ts.clean <- ts.bcr30fall %>% select(-c(FID, lat, lon, date, year, time, y))
-ts.scale <- ts.clean %>% select(-occur) %>% mutate_all(funs(scale(.) %>% as.vector)) %>% 
+ts.scale <- ts.clean %>% select(-occur) %>% mutate_all(funs(scale(.) %>% as.vector)) %>%
   mutate(occur = ts.clean$occur)
 write.csv(ts.scale, file = "birds.csv", row.names = F)
 
@@ -214,7 +222,7 @@ write.csv(ts.scale, file = "birds.csv", row.names = F)
 train_control <- trainControl(method="cv", number=3, verboseIter = TRUE, returnData = FALSE)
 
 # KNN
-KNN_CV <- train(occur~., data = ts.scale, 
+KNN_CV <- train(occur~., data = ts.scale,
                 method = "knn", tuneLength = 10, trControl = train_control)
 save(KNN_CV, file = "KNN_CV.RDA")
 min.KNN <- min(KNN_CV$results$RMSE)
@@ -251,7 +259,7 @@ BRNN_CV <- train(occur~., data = ts.scale,
                  method = "brnn", tuneGrid = tg.BRNN, trControl = train_control)
 
 #Multilayer Perceptron
-tg.MP <- expand.grid(size = 2, rho = 100, dropout = .8, batch_size = 500, 
+tg.MP <- expand.grid(size = 2, rho = 100, dropout = .8, batch_size = 500,
                      lr = .000001, decay = 0, activation = "relu")
 MLP_CV <- train(as.factor(ifelse(occur==1, "B","NB"))~., data = ts.scale,
                 method = "mlpKerasDropout", tuneGrid = tg.MP, trControl = train_class)
@@ -268,7 +276,7 @@ save(ANN_CV, file = "ANN_CV.RDA")
 
 ## For methods that are classification only:
 
-train_class <- trainControl(method="cv", number=3, verboseIter = TRUE, 
+train_class <- trainControl(method="cv", number=3, verboseIter = TRUE,
                             classProbs = TRUE, savePredictions = TRUE)
 RMSE.calc <- function(mod){
   c("RMSE" = sqrt(mean((mod$pred$B - ts.scale$occur)^2)),
@@ -298,7 +306,7 @@ GLM.r <- GLMN_CV$results[which.min(GLMN_CV$results$RMSE),][c("RMSE", "MAE")]
 results.CV <- data.frame(rbind(RF.r, KNN.r, ANN.r,
                                GAM.r, GLM.r, RMSE_LDA,
                                RMSE_QDA))
-row.names(results.CV) <- c("Random Forest \n mtry = 4.7", 
+row.names(results.CV) <- c("Random Forest \n mtry = 4.7",
                            "KNN \n k = 11",
                            "ANN \n 100, 30, 15",
                            "GAM \n  df =26",
@@ -313,17 +321,17 @@ xtable(results.CV, digits = 5, align = "ccc")
 library(ggplot2)
 library(tibble)
 library(tidyr)
-results.CV.plot <- results.CV %>% arrange(desc(RMSE))%>% mutate(models = models) %>% 
+results.CV.plot <- results.CV %>% arrange(desc(RMSE))%>% mutate(models = models) %>%
   gather(Metric, Val, RMSE:MAE)
 
 results.CV.plot %>% ggplot(aes(x = models, y = Val, fill = Metric)) +
   geom_col(position = "dodge", width = .5) + theme_classic() + ggtitle("3-Fold Cross Validation Error") +
   geom_hline(aes(yintercept = 0)) + coord_cartesian(ylim = c(0, .5)) + ylab("")+ xlab("")+
-  theme(plot.title = element_text(size = 18, hjust = .5), axis.title = element_text(size = 15), 
+  theme(plot.title = element_text(size = 18, hjust = .5), axis.title = element_text(size = 15),
         axis.text.y = element_text(size = 12),
-        axis.text.x = element_text(size = 14, angle = 45, hjust = 1), 
-        legend.background = element_rect(colour = "black", fill = "white"), 
-        legend.text = element_text(size = 12), legend.title = element_text(size = 14), 
+        axis.text.x = element_text(size = 14, angle = 45, hjust = 1),
+        legend.background = element_rect(colour = "black", fill = "white"),
+        legend.text = element_text(size = 12), legend.title = element_text(size = 14),
         legend.spacing.y = unit(2, "cm"), plot.subtitle = element_text(hjust = .5))
 
 
@@ -401,7 +409,7 @@ t1013_s <- tapply(tresult.1013_s$pr.1013_s, INDEX = testset_2$dfs, FUN = mean)
 dts <- data.frame(t0809, t1013, t1013_s)
 
 
-# Making the plots 
+# Making the plots
 
 attach(dts)
 smooth_0809 <- ksmooth(200:365, t0809, kernel = "normal", bandwidth = 10)$y
@@ -412,19 +420,19 @@ detach(dts)
 
 rf_labels <- as.factor(c(rep("2008-2009", 166), rep("2010-2013", 166), rep("2010-2013, reduced", 166)))
 trf_df <- data.frame("Predictions" = c(smooth_0809, smooth_1013, smooth_1013_s), rf_labels)
-rf_ps <- ggplot(data = trf_df, aes(x = rep(200:365,3), col = rf_labels, linetype = rf_labels)) + 
+rf_ps <- ggplot(data = trf_df, aes(x = rep(200:365,3), col = rf_labels, linetype = rf_labels)) +
   geom_line(aes(y = Predictions), size = 1.25) +
   scale_x_continuous(name = "Day of Year", labels = seq(200, 365, 20), breaks = seq(200, 365,20)) +
   scale_y_continuous(name = "Occurrence", labels = seq(0, .3, .05), breaks = seq(0,.3,.05))+
   scale_color_manual(name = "Training Set", values =c(gg_color_hue(2), gg_color_hue(2)[2]),
                      labels = c("2008-2009", "2010-2013", "2010-2013\nreduced"))+
   scale_linetype_manual(name = "Training Set", values = c("solid", "dotted", "dashed"),
-                        labels = c("2008-2009", "2010-2013", "2010-2013\nreduced")) + 
-  geom_hline(aes(yintercept = 0)) + 
+                        labels = c("2008-2009", "2010-2013", "2010-2013\nreduced")) +
+  geom_hline(aes(yintercept = 0)) +
   ggtitle("Predicted Occurrence") + theme_classic()+
   theme(plot.title = element_text(size = 23, hjust = .5), axis.title = element_text(size = 17),
         axis.text = element_text(size = 13), legend.background = element_rect(colour = "black", fill = "white"),
-        legend.title = element_text(size = 16), legend.spacing.y = unit(1.5, "cm"), 
+        legend.title = element_text(size = 16), legend.spacing.y = unit(1.5, "cm"),
         plot.subtitle = element_text(hjust = .5, size = 12), legend.text = element_text(size = 15), legend.key.size = unit(2.5,"line"))
 rf_ps
 
@@ -432,11 +440,11 @@ rf_ps
 # Figure 4 ----------------------------------------------------------------
 
 
-ts.entry <- ts.bcr30fall[,-which(names(ts.bcr30fall) == "FID" | names(ts.bcr30fall) == "y"| 
+ts.entry <- ts.bcr30fall[,-which(names(ts.bcr30fall) == "FID" | names(ts.bcr30fall) == "y"|
                                    names(ts.bcr30fall) == "lon"  |names(ts.bcr30fall) == "lat"|
                                    names(ts.bcr30fall) == "date"|names(ts.bcr30fall) == "year")]
 pr.occur <- partialPlot(rf.whole, ts.bcr30fall, x.var = temp.max)
-plot(pr.occur, type = 'o', xlab = "Max Temp", 
+plot(pr.occur, type = 'o', xlab = "Max Temp",
      ylab = "Expected Occurence Conditional on Max Temp", main = "Partial Effect Plot for Max Temp")
 abline(v = c(15, 17), lty = 2, col = 'red')
 logits <- log(pr.occur$y/(1-pr.occur$y))
@@ -447,26 +455,25 @@ save(pr.occur, file = "partial_effects.RDA")
 
 load("partial_effects.RDA")
 pr.occur <- data.frame(pr.occur)
-ggplot(data = pr.occur, aes(x = pr.occur$x, y = pr.occur$y)) + geom_line(size = 2) + 
-  xlab("Max Temp, Degrees Celsius") + ylab("Occurrence") + scale_x_continuous(breaks = seq(-15, 35,5)) + 
-  ggtitle("Partial Effect of Maximum Temperature") +   theme_minimal()+
-  theme(plot.title = element_text(lineheight=2, face="bold", hjust = .5, size = 17),
+pdf("C:/Users/drain/Box Sync/Ebird Tree Swallow Project/MaxTemp_Pdependence.pdf", width = 10, height = 5)
+ggplot(data = pr.occur, aes(x = pr.occur$x, y = pr.occur$y)) + geom_line(size = 2) +
+  xlab("Max Temp, Degrees Celsius") + ylab("Occurrence") + scale_x_continuous(breaks = seq(-15, 35,5)) +
+  ggtitle("Partial Dependence on Maximum Temperature") +   theme_classic()+
+  theme(plot.title =  element_text(size = 23, hjust = .5),
         axis.text.x = element_text(size = 15), axis.title.x = element_text(size = 15),
-        axis.text.y = element_text(size = 15), axis.title.y = element_text(size = 15)) + 
+        axis.text.y = element_text(size = 15), axis.title.y = element_text(size = 15)) +
   annotate(geom = "rect", xmin = 12.5, xmax = 17.5, ymin = .06, ymax = .1, alpha = .2, fill = 'red') +
   geom_curve(x = 0, xend = 12.5, y = .12, yend = .08,
              arrow = arrow(length = unit(0.3,"cm")), curvature = 0.5, size = .85)+
-  geom_label(aes(x = 0, y = .12, label = 'Temperatures where insects\n begin to be active'), size = 5) 
-
+  geom_label(aes(x = 0, y = .12, label = 'Temperatures where insects\n begin to be active'), size = 5)
+dev.off()
 
 
 # Figure 5 ----------------------------------------------------------------
 
-load("/Users/df36/projects/2017_Lucas_RF_CLT/data.surf/SRD_tmax_2014_200-365.RData")
-str(dat)
-load("/Users/df36/projects/2017_Lucas_RF_CLT/data.surf/surfing_eBird.srd.3km.locations.RData")
-head(locations)
-
+load("C:/Users/drain/OneDrive/eBird project/SRD_tmax_1980-2007_200-365.RData")
+load("C:/Users/drain/OneDrive/eBird project/surfing_eBird.srd.3km.locations.RData")
+load("C:/Users/drain/OneDrive/eBird project/surfing_eBird.srd.3km.data.RData")
 setwd("C:/Users/drain/OneDrive/eBird project")
 
 load("C:/Users/drain/OneDrive/eBird project/ts.bcr30fall.RData")
@@ -476,10 +483,15 @@ ts.perm$temp.max <- sample(ts.bcr30fall$temp.max, replace = FALSE)
 
 ## Building the forests
 library(randomForest)
-rf_full  <- randomForest(occur~.-y-FID-lon-lat-date-dfs-year, data = ts.bcr30fall, ntree = 500)
-rf_red <- randomForest(occur~.-y-FID-lon-lat-date-dfs-year, data = ts.perm, ntree = 500)
+library(foreach)
+#rf_full  <- randomForest(occur~.-y-FID-lon-lat-date-year, data = ts.bcr30fall, ntree = 500)
+rf.full <- foreach(ntree=rep(125, 4), .combine=randomForest::combine, .packages='randomForest') %dopar%
+  randomForest(occur~.-y-FID-lon-lat-date-year, data = ts.bcr30fall, ntree = ntree, do.trace = T, replace = F, nodesize = 30)
+#rf_red <- randomForest(occur~.-y-FID-lon-lat-date-year, data = ts.perm, ntree = 500)
+rf.red <- foreach(ntree=rep(125, 4), .combine=randomForest::combine, .packages='randomForest') %dopar%
+  randomForest(occur~.-y-FID-lon-lat-date-year, data = ts.perm, ntree = ntree, do.trace = T, replace = F, nodesize = 30)
 
-LID <- 1:length(dat[,1]) ## Creating location indices for easy subsetting. 
+LID <- 1:length(dat[,1]) ## Creating location indices for easy subsetting.
 locations <- data.frame(locations, LID)
 
 loc_NE <- locations[locations$lon > -78 & locations$lat > 37 & locations$lat < 44,]
@@ -505,7 +517,7 @@ eff.dist <- rep(1, length(loc_NE$LID))
 no.obs <- rep(1, length(loc_NE$LID))
 
 grid_df <- data.frame(srd_NE, I.stationary, time, eff.hours, eff.dist, no.obs,
-                      FID, lon, lat, date, y, dfs, year)
+                      FID, lon, lat, date, y, year)
 
 ## Putting in max temp information for various days
 places <- loc_NE$LID
@@ -515,26 +527,30 @@ names(dat2) <- paste(rep("Mtemp", 9), as.character(days), sep = "")
 
 
 ## Making the predictions
-pred_diff <- function(tempmax){
-  pred_full <- predict(rf_full, newdata = data.frame(grid_df, "temp.max" = tempmax), type = "response")
-  pred_red <- predict(rf_red, newdata = data.frame(grid_df, "temp.max" = tempmax), type = "response")
+pred_diff <- function(tempmax, doy){
+  pred_full <- predict(rf.full, newdata = data.frame(grid_df, "temp.max" = tempmax, "dfs" = doy), type = "response")
+  pred_red <- predict(rf.red, newdata = data.frame(grid_df, "temp.max" = tempmax, "dfs" = doy), type = "response")
   return(pred_full - pred_red)
 }
 
 ## Making the predictions everywhere
 pdiffs <- list()
 for(i in 1:9){
-  pdiff <- pred_diff(dat2[,i])
+  pdiff <- pred_diff(tempmax= dat2[,i], doy = days[i])
   pdiffs[[i]] <- data.frame("Pred_diff" = pdiff, "Lat" = loc_NE$lat, "Lon" = loc_NE$lon)
 }
 
 names(pdiffs) <- paste(rep("Mtemp", 9), as.character(days), sep = "")
-save(pdiffs, file = "Mapping_Differences.RDA")
+#save(pdiffs, file = "Mapping_Differences.RDA")
+save(pdiffs, file = "Mapping_Differences_DoY.RDA")
 
 library(colorspace)
+library(fields)
 div_pal <- choose_palette()
 dev.new()
 levs <- sort(unique(c(seq(-.25,.25,.05), seq(-.09, .09, .01))))
+col_scheme <- div_pal(length(levs)-1)
+pdf(file = "C:/Users/drain/Box Sync/Ebird Tree Swallow Project/DoY_DifMaps.pdf", width = 9, height = 9)
 par(mfrow = c(3,3), mar = c(4,3,3,4), oma = c(rep(.25,3), 1))
 for(i in 1:9){
   quilt.plot(x=loc_NE$lon, y=loc_NE$lat, z=pdiffs[[i]]$Pred_diff,nlevel = length(levs)-1, breaks = levs,
@@ -542,6 +558,7 @@ for(i in 1:9){
   title(paste("Day",days[i], "of Fall"))
   map("state", add = T)
 }
+dev.off()
 
 
 
@@ -572,9 +589,11 @@ rownames(I_mat) <- NULL
 I_mat <- data.frame(I_mat)
 names(I_mat) <- c("Observed I", "Expected I", "Std Error", "P value")
 Z_Score <- (I_mat$`Observed I`-I_mat$`Expected I`)/I_mat$`Std Error`
-I_mat <- data.frame(I_mat, "Z" = Z_Score)
-xtable(I_mat, digits = 4)
+I_mat2 <- data.frame(I_mat, "Z" = Z_Score) %>% t() %>% as.data.frame()
+names(I_mat2) <- days
+xtable(I_mat2[c(1,4, 5),], digits = 4)
 
+# Without DoY
 # \begin{table}[ht]
 # \centering
 # \begin{tabular}{rrrrrr}
@@ -594,9 +613,47 @@ xtable(I_mat, digits = 4)
 # \end{tabular}
 # \end{table}
 
+# With DoY
+
+# % latex table generated in R 3.5.1 by xtable 1.8-3 package
+# % Fri Dec 07 17:44:02 2018
+# \begin{table}[ht]
+# \centering
+# \begin{tabular}{rrrrrr}
+# \hline
+# & Observed.I & Expected.I & Std.Error & P.value & Z \\
+# \hline
+# 1 & 0.1782 & -0.0002 & 0.0004 & 0.0000 & 477.6874 \\
+# 2 & 0.1594 & -0.0002 & 0.0004 & 0.0000 & 427.2262 \\
+# 3 & 0.1609 & -0.0002 & 0.0004 & 0.0000 & 431.2274 \\
+# 4 & 0.2150 & -0.0002 & 0.0004 & 0.0000 & 576.0198 \\
+# 5 & 0.3291 & -0.0002 & 0.0004 & 0.0000 & 881.7689 \\
+# 6 & 0.1870 & -0.0002 & 0.0004 & 0.0000 & 502.9827 \\
+# 7 & 0.1325 & -0.0002 & 0.0004 & 0.0000 & 355.4431 \\
+# 8 & 0.1119 & -0.0002 & 0.0004 & 0.0000 & 300.0679 \\
+# 9 & 0.1281 & -0.0002 & 0.0004 & 0.0000 & 343.5732 \\
+# \hline
+# \end{tabular}
+# \end{table}
+
+# % latex table generated in R 3.5.1 by xtable 1.8-3 package
+# % Fri Dec 07 20:11:12 2018
+# \begin{table}[ht]
+# \centering
+# \begin{tabular}{rrrrrrrrrr}
+# \hline
+# & 1 & 21 & 41 & 61 & 81 & 101 & 121 & 141 & 161 \\
+# \hline
+# Observed.I & 0.1782 & 0.1594 & 0.1609 & 0.2150 & 0.3291 & 0.1870 & 0.1325 & 0.1119 & 0.1281 \\
+# P.value & 0.0000 & 0.0000 & 0.0000 & 0.0000 & 0.0000 & 0.0000 & 0.0000 & 0.0000 & 0.0000 \\
+# Z & 477.6874 & 427.2262 & 431.2274 & 576.0198 & 881.7689 & 502.9827 & 355.4431 & 300.0679 & 343.5732 \\
+# \hline
+# \end{tabular}
+# \end{table}
+
 
 ####################################################################
-## IV GLOBAL TESTING
+## IV GLOBAL TESTING -----------------------------------------------
 ####################################################################
 #####
 # Reducing the size of the 10-13 dataset, creating D^NN
@@ -636,7 +693,7 @@ load("C:/Users/drain/OneDrive/eBird project/GIS_Stuff/ts.NN_1013.RDA")
 load("C:/Users/drain/OneDrive/eBird project/SRD_tmax_1980-2007_200-365.RData")
 load("C:/Users/drain/OneDrive/eBird project/surfing_eBird.srd.3km.locations.RData")
 load("C:/Users/drain/OneDrive/eBird project/surfing_eBird.srd.3km.data.RData")
-LID <- 1:length(dat[,1]) ## Creating location indices for easy subsetting. 
+LID <- 1:length(dat[,1]) ## Creating location indices for easy subsetting.
 locations <- data.frame(locations, LID)
 loc_NE <- locations[locations$lon > -78 & locations$lat > 37 & locations$lat < 44,]
 srd_NE <- srd[[2]][loc_NE$LID,]
@@ -644,7 +701,7 @@ names(srd_NE) <- names(ts.bcr30fall)[11:26]
 places <- loc_NE$LID
 dat2 <- dat[places,]
 
-
+# Canonical Permutation Test ----------------------------------------------
 # DoY model ---------------------------------------------------------------
 
 
@@ -681,9 +738,9 @@ base_gen_dfs <- function(p, ntree, npar, test){
   ## Generating our test statistic
   start.time <- Sys.time()
   print(start.time)
-  rf.1013 <- foreach(ntree=rep(ntree, npar), .combine=randomForest::combine, .packages='randomForest') %dopar% 
+  rf.1013 <- foreach(ntree=rep(ntree, npar), .combine=randomForest::combine, .packages='randomForest') %dopar%
     randomForest(occur~., data = ts.x1013, ntree = ntree, mtry = p, nodesize = 15)
-  rf.0809 <- foreach(ntree=rep(ntree, npar), .combine=randomForest::combine, .packages='randomForest') %dopar%  
+  rf.0809 <- foreach(ntree=rep(ntree, npar), .combine=randomForest::combine, .packages='randomForest') %dopar%
     randomForest(occur~., data = ts.x0809, ntree = ntree, mtry = p, nodesize = 15)
   p0809.p <- lapply(testpts, predict, object = rf.1013)
   p1013.p <- lapply(testpts, predict, object = rf.0809)
@@ -711,9 +768,9 @@ pd_gen_dfs <- function(p, ntree, npar){
   ## Generating our test statistic
   start.time <- Sys.time()
   print(start.time)
-  rf.1013 <- foreach(ntree=rep(ntree, npar), .combine=randomForest::combine, .packages='randomForest') %dopar% 
+  rf.1013 <- foreach(ntree=rep(ntree, npar), .combine=randomForest::combine, .packages='randomForest') %dopar%
     randomForest(occur~., data = ts.1013.p, ntree = ntree, mtry = p, nodesize = 15)
-  rf.0809 <- foreach(ntree=rep(ntree, npar), .combine=randomForest::combine, .packages='randomForest') %dopar%  
+  rf.0809 <- foreach(ntree=rep(ntree, npar), .combine=randomForest::combine, .packages='randomForest') %dopar%
     randomForest(occur~., data = ts.0809.p, ntree = ntree, mtry = p, nodesize = 15)
   p0809.p <- lapply(testpts, predict, object = rf.1013)
   p1013.p <- lapply(testpts, predict, object = rf.0809)
@@ -722,7 +779,7 @@ pd_gen_dfs <- function(p, ntree, npar){
   end.time <- Sys.time()
   time.taken <- end.time - start.time
   print(time.taken)
-  return(list("rf.1013_perm" = rf.1013, "rf.0809_perm" = rf.0809, 
+  return(list("rf.1013_perm" = rf.1013, "rf.0809_perm" = rf.0809,
               "Preds0809_perm" = p0809.p, "Preds1013_perm" = p1013.p))
 }
 
@@ -826,7 +883,7 @@ save(object = p1013.full, file ="preds_1013_full.RData")
 
 
 pd_gen <- function(nperm, p, ntree, npar){
-  
+
   ## Generating our idealized testing set
   places <- loc_NE$LID
   dat2 <- dat[places,]
@@ -870,9 +927,9 @@ pd_gen <- function(nperm, p, ntree, npar){
     ts.y0809.p <- ts.0809.p[,which(names(ts.0809.p) == "occur")]
     ts.y1013.p <- ts.1013.p[,which(names(ts.1013.p) == "occur")]
     ## Generating our test statistic
-    rf.1013.p <- foreach(ntree=rep(ntree, npar), .combine=randomForest::combine, .packages='randomForest') %dopar% 
+    rf.1013.p <- foreach(ntree=rep(ntree, npar), .combine=randomForest::combine, .packages='randomForest') %dopar%
       randomForest(x = ts.x1013.p, y = ts.y1013.p,ntree = ntree, mtry = p, nodesize = 15)
-    rf.0809.p <- foreach(ntree=rep(ntree, npar), .combine=randomForest::combine, .packages='randomForest') %dopar%  
+    rf.0809.p <- foreach(ntree=rep(ntree, npar), .combine=randomForest::combine, .packages='randomForest') %dopar%
       randomForest(x = ts.x0809.p, y = ts.y0809.p,ntree = ntree, mtry = p, nodesize = 15)
     pred.0809.p <- predict(rf.0809.p, newdata = test.ideal)
     pred.1013.p <- predict(rf.1013.p, newdata = test.ideal)
@@ -885,7 +942,7 @@ pd_gen <- function(nperm, p, ntree, npar){
     print(time.taken)
   }
   return(list("Permuted CvMs" = CvMs, "Permuted KS" = KSs,
-              "Permuted0809" = perm0809, "Permuted1013" = perm1013, 
+              "Permuted0809" = perm0809, "Permuted1013" = perm1013,
               "RF.0809" <- rf.0809.p, "RF.1013" <- rf.1013.p))
 }
 
@@ -934,9 +991,9 @@ base_gen_mtemp <- function(p, ntree, npar){
   ## Generating our test statistic
   start.time <- Sys.time()
   print(start.time)
-  rf.1013 <- foreach(ntree=rep(ntree, npar), .combine=randomForest::combine, .packages='randomForest') %dopar% 
+  rf.1013 <- foreach(ntree=rep(ntree, npar), .combine=randomForest::combine, .packages='randomForest') %dopar%
     randomForest(x = ts.x1013, y = ts.y1013,ntree = ntree, mtry = p, nodesize = 15)
-  rf.0809 <- foreach(ntree=rep(ntree, npar), .combine=randomForest::combine, .packages='randomForest') %dopar%  
+  rf.0809 <- foreach(ntree=rep(ntree, npar), .combine=randomForest::combine, .packages='randomForest') %dopar%
     randomForest(x = ts.x0809, y = ts.y0809,ntree = ntree, mtry = p, nodesize = 15)
   pred.0809 <- predict(rf.0809, newdata = test.ideal)
   pred.1013 <- predict(rf.1013, newdata = test.ideal)
@@ -981,7 +1038,7 @@ load("C:/Users/drain/OneDrive/eBird project/surfing_eBird.srd.3km.locations.RDat
 load("C:/Users/drain/OneDrive/eBird project/surfing_eBird.srd.3km.data.RData")
 load("C:/Users/drain/OneDrive/eBird project/observed_RF.Rdata")
 
-LID <- 1:length(dat[,1]) ## Creating location indices for easy subsetting. 
+LID <- 1:length(dat[,1]) ## Creating location indices for easy subsetting.
 locations <- data.frame(locations, LID)
 loc_NE <- locations[locations$lon > -78 & locations$lat > 37 & locations$lat < 44,]
 places <- loc_NE$LID
@@ -1025,16 +1082,16 @@ r_sobs <- cor(p0809, p1013, method = "spearman")
 plot.ts(ksmooth(x = 1:166, p0809, kernel = "normal", bandwidth = 5)$y)
 lines(ksmooth(x = 1:166, p1013, kernel = "normal", bandwidth = 5)$y, col ='red')
 
-df_preds <- data.frame("preds" = 
-                         c(ksmooth(x = 1:166, p0809, kernel = "normal", bandwidth =7.5)$y, 
+df_preds <- data.frame("preds" =
+                         c(ksmooth(x = 1:166, p0809, kernel = "normal", bandwidth =7.5)$y,
                            ksmooth(x = 1:166, p1013, kernel = "normal", bandwidth = 7.5)$y), "yrs" <- c(rep("0809", 166), rep("1013", 166)))
 gpreds <- ggplot(data = df_preds, aes(x = rep(1:166,2), y = preds, color = yrs)) + geom_line(lwd = 1.15) +
-  scale_color_discrete(name = "Training\nYears", labels = c("2008-2009","2010-2013")) + 
-  scale_x_continuous(name = "Day of Year", breaks = seq(0, 165, 15)) + 
+  scale_color_discrete(name = "Training\nYears", labels = c("2008-2009","2010-2013")) +
+  scale_x_continuous(name = "Day of Year", breaks = seq(0, 165, 15)) +
   scale_y_continuous(name = "Occurrence", breaks = seq(0, .3, .05)) + ggtitle("Observed Prediction Curves") + theme_minimal()+
   theme(plot.title = element_text(size = 16, hjust = .5), axis.title = element_text(size = 15),
         axis.text = element_text(size = 13), legend.background = element_rect(colour = "black", fill = "white"),
-        legend.title = element_text(size = 13), legend.spacing.y = unit(1, "cm"), legend.text = element_text(size = 12)) 
+        legend.title = element_text(size = 13), legend.spacing.y = unit(1, "cm"), legend.text = element_text(size = 12))
 gpreds
 
 d1 <- dir()
@@ -1047,7 +1104,7 @@ for(i in 1:length(d1)){
   p1013.p <- lapply(testpts, predict, object = pd1[[6]])
   p0809.p <- unlist(lapply(p0809.p, FUN = mean))
   p1013.p <- unlist(lapply(p1013.p, FUN = mean))
-  preds_0809 <- cbind(preds_0809, p0809.p) 
+  preds_0809 <- cbind(preds_0809, p0809.p)
   preds_1013 <- cbind(preds_1013, p1013.p)
   ks_p[i] <- max(abs(p0809.p - p1013.p))
   cvm_p[i] <- mean((p0809.p-p1013.p)^2)
@@ -1078,14 +1135,14 @@ smoothed_stats <- function(dfo1, dfo2, dfp1, dfp2, bw, index, max.y = .45, unsmo
     D3_obs <- mean(dfo1[111:166] - dfo2[111:166])
     df_tstat <- data.frame(CvM =  50*cvm_smooth, KS = ks_smooth)
     df_tstat <- melt(df_tstat)
-    gdensityCvMKS <- ggplot(data = df_tstat, aes(x = value, fill = variable)) + 
+    gdensityCvMKS <- ggplot(data = df_tstat, aes(x = value, fill = variable)) +
       geom_density(mapping = aes(linetype = variable), alpha = .45, size = 1.095) +
-      scale_fill_manual(values=c("blue", "Tomato"),name = "Test Statistic", 
+      scale_fill_manual(values=c("blue", "Tomato"),name = "Test Statistic",
                         labels = c("Cramer von Mises\n", "Kolmorgorov-\nSmirnov")) +
-      scale_linetype_manual(values=c("solid", "dotdash"),name = "Test Statistic", 
+      scale_linetype_manual(values=c("solid", "dotdash"),name = "Test Statistic",
                             labels = c("Cramer von Mises\n", "Kolmorgorov-\nSmirnov")) +
-      geom_segment(aes(x = ks_obs, y = 0, xend =ks_obs, yend = 8), lwd = 1.85, col = "Tomato", linetype = "dotdash")+ 
-      geom_segment(aes(x = 50*cvm_obs, y = 0, xend =50*cvm_obs, yend = 3), lwd = 1.85, col = "blue", linetype = "solid") + 
+      geom_segment(aes(x = ks_obs, y = 0, xend =ks_obs, yend = 8), lwd = 1.85, col = "Tomato", linetype = "dotdash")+
+      geom_segment(aes(x = 50*cvm_obs, y = 0, xend =50*cvm_obs, yend = 3), lwd = 1.85, col = "blue", linetype = "solid") +
       coord_cartesian(xlim = c(0, .15), ylim = c(0, 25)) + ylab(NULL)+
       theme(plot.title = element_text(lineheight=2, face="bold", hjust = .5, size = 17),
             axis.text.x = element_text(size = 17), axis.title.x = element_text(size = 15),
@@ -1097,15 +1154,15 @@ smoothed_stats <- function(dfo1, dfo2, dfp1, dfp2, bw, index, max.y = .45, unsmo
     df_dstat <- melt(data.frame(D1, D2, D3))
     gD2<- ggplot(data = df_dstat, aes(x = value, fill = variable), size = 1.5) +
       geom_density(mapping = aes(linetype = variable), alpha = .45, size = 1.095) +
-      scale_fill_manual(values=rev(c("#002984", "#D240A7" ,"#FFE072")),name = "Test Statistic", 
-                        labels = c("Curve Distance,\n DoY 200-264\n", 
+      scale_fill_manual(values=rev(c("#002984", "#D240A7" ,"#FFE072")),name = "Test Statistic",
+                        labels = c("Curve Distance,\n DoY 200-264\n",
                                    "Curve Distance,\n DoY 265-310\n", "Curve Distance,\n DoY 310-365\n")) +
-      scale_linetype_manual(values=c("twodash", "solid", "dashed"),name = "Test Statistic", 
-                            labels = c("Curve Distance,\n DoY 200-264\n", 
+      scale_linetype_manual(values=c("twodash", "solid", "dashed"),name = "Test Statistic",
+                            labels = c("Curve Distance,\n DoY 200-264\n",
                                        "Curve Distance,\n DoY 265-310\n", "Curve Distance,\n DoY 310-365\n")) +
-      geom_segment(aes(x = D1_obs, y = 0, xend =D1_obs, yend = 6), lwd = 1.85, col = "#FFE072", linetype = "twodash")+ 
-      geom_segment(aes(x = D2_obs, y = 0, xend =D2_obs, yend = 2.5), lwd = 1.85, col = "#D240A7", linetype = "solid") + 
-      geom_segment(aes(x = D3_obs, y = 0, xend =D3_obs, yend = 19), lwd = 1.85, col = "#002984", linetype = "dashed") + 
+      geom_segment(aes(x = D1_obs, y = 0, xend =D1_obs, yend = 6), lwd = 1.85, col = "#FFE072", linetype = "twodash")+
+      geom_segment(aes(x = D2_obs, y = 0, xend =D2_obs, yend = 2.5), lwd = 1.85, col = "#D240A7", linetype = "solid") +
+      geom_segment(aes(x = D3_obs, y = 0, xend =D3_obs, yend = 19), lwd = 1.85, col = "#002984", linetype = "dashed") +
       coord_cartesian(xlim = c(-.15, .15), ylim = c(0, 25)) + ylab(NULL)+
       theme(plot.title = element_text(lineheight=2, face="bold", hjust = .5, size = 17),
             axis.text.x = element_text(size = 17), axis.title.x = element_text(size = 15),
@@ -1116,26 +1173,26 @@ smoothed_stats <- function(dfo1, dfo2, dfp1, dfp2, bw, index, max.y = .45, unsmo
       scale_x_continuous(name = "Test Statistic") + ggtitle("Estimated Permutation Densities")
     df_preds <- data.frame("preds" = c(dfo1, dfo2), "yrs" <- c(rep("0809", 166), rep("1013", 166)))
     gpreds <- ggplot(data = df_preds, aes(x = rep(200:365,2), y = preds, color = yrs)) + geom_line(lwd = 1.15) +
-      scale_color_discrete(name = "Training\nYears", labels = c("2008-2009","2010-2013")) + 
+      scale_color_discrete(name = "Training\nYears", labels = c("2008-2009","2010-2013")) +
       coord_cartesian(xlim = c(200, 365), ylim = c(0, max.y)) +
-      scale_x_continuous(name = "Day of Year", breaks = seq(200, 365, 15)) + 
-      scale_y_continuous(name = "Occurrence", breaks = seq(0, max.y, .05)) + ggtitle("Observed Prediction Curves") + 
+      scale_x_continuous(name = "Day of Year", breaks = seq(200, 365, 15)) +
+      scale_y_continuous(name = "Occurrence", breaks = seq(0, max.y, .05)) + ggtitle("Observed Prediction Curves") +
       theme_classic()+
       theme(plot.title = element_text(size = 20, hjust = .5), axis.title = element_text(size = 17),
             axis.text = element_text(size = 17), legend.background = element_rect(colour = "black", fill = "white"),
             legend.title = element_text(size = 17), legend.spacing.y = unit(1, "cm"),
-            legend.text = element_text(size = 15),legend.key.size = unit(2,"line")) 
+            legend.text = element_text(size = 15),legend.key.size = unit(2,"line"))
     df_perm <- data.frame("preds" = c(dfp1[,index], dfp2[,index]),"yrs" = c(rep("0809", 166), rep("1013", 166)))
     gperm <- ggplot(data = df_perm, aes(x = rep(200:365,2), y = preds, color = yrs)) + geom_line(lwd = 1.15) +
-      scale_color_discrete(name = "Training\nYears", labels = c("2008-2009","2010-2013")) + 
+      scale_color_discrete(name = "Training\nYears", labels = c("2008-2009","2010-2013")) +
       coord_cartesian(xlim = c(200, 365), ylim = c(0, max.y)) +
-      scale_x_continuous(name = "Day of Year", breaks = seq(200, 365, 15)) + 
+      scale_x_continuous(name = "Day of Year", breaks = seq(200, 365, 15)) +
       scale_y_continuous(name = "Occurrence", breaks = seq(0, max.y, .05)) + ggtitle("Permuted Prediction Curves") +
       theme_classic()+
       theme(plot.title = element_text(size = 20, hjust = .5), axis.title = element_text(size = 17),
             axis.text = element_text(size = 17), legend.background = element_rect(colour = "black", fill = "white"),
             legend.title = element_text(size = 17), legend.spacing.y = unit(1, "cm"),
-            legend.text = element_text(size = 15),legend.key.size = unit(2,"line")) 
+            legend.text = element_text(size = 15),legend.key.size = unit(2,"line"))
     return(list(perm_dist = data.frame("CvM" = cvm_smooth, "KS" = ks_smooth, "D1" = D1, "D2" = D2, "D3" = D3),
                 "obs_stats" = c("CvM" = cvm_obs, "KS" = ks_obs, "Diff_1" = D1_obs, "Diff_2" = D2_obs, "Diff_3" = D3_obs),
                 "Density_Plot" = gdensityCvMKS,  "Predicted_Plot" = gpreds, "Permuted_Plot" = gperm, "D1to3Density" = gD2))
@@ -1161,10 +1218,10 @@ smoothed_stats <- function(dfo1, dfo2, dfp1, dfp2, bw, index, max.y = .45, unsmo
       df_tstat <- data.frame(CvM =  50*cvm_smooth, KS = ks_smooth)
       df_tstat <- melt(df_tstat)
       gdensity <- ggplot(data = df_tstat, aes(x = value, fill = variable), lwd = 0) + geom_density(alpha = .5) +
-        scale_fill_manual(values=c("blue", "Tomato"),name = "Test Statistic", 
+        scale_fill_manual(values=c("blue", "Tomato"),name = "Test Statistic",
                           labels = c("Cramer von Mises\n", "Kolmorgorov-\nSmirnov")) +
-        geom_segment(aes(x = ks_obs, y = 0, xend =ks_obs, yend = 5), lwd = 1.5, col = "Tomato")+ 
-        geom_segment(aes(x = 50*cvm_obs, y = 0, xend =50*cvm_obs, yend = 30), lwd = 1.5, col = "blue") + 
+        geom_segment(aes(x = ks_obs, y = 0, xend =ks_obs, yend = 5), lwd = 1.5, col = "Tomato")+
+        geom_segment(aes(x = 50*cvm_obs, y = 0, xend =50*cvm_obs, yend = 30), lwd = 1.5, col = "blue") +
         coord_cartesian(xlim = c(0, .15), ylim = c(0, 30)) + ylab(NULL)+
         theme_minimal() +
         theme(plot.title = element_text(lineheight=2, face="bold", hjust = .5, size = 17),
@@ -1176,12 +1233,12 @@ smoothed_stats <- function(dfo1, dfo2, dfp1, dfp2, bw, index, max.y = .45, unsmo
         scale_x_continuous(name = "Test Statistic") + ggtitle("Estimated Permutation Densities")
       df_dstat <- melt(data.frame(D1, D2, D3))
       gD2<- ggplot(data = df_dstat, aes(x = value, fill = variable), lwd = 0) + geom_density(alpha = .5) +
-        scale_fill_manual(values=rev(c("#002984", "#D240A7" ,"#FFE072")),name = "Test Statistic", 
-                          labels = c("Curve Distance,\n DoY 200-264\n", 
+        scale_fill_manual(values=rev(c("#002984", "#D240A7" ,"#FFE072")),name = "Test Statistic",
+                          labels = c("Curve Distance,\n DoY 200-264\n",
                                      "Curve Distance,\n DoY 265-310\n", "Curve Distance,\n DoY 310-365\n")) +
-        geom_segment(aes(x = D1_obs, y = 0, xend =D1_obs, yend = 45), lwd = 1.5, col = "#FFE072")+ 
-        geom_segment(aes(x = D2_obs, y = 0, xend =D2_obs, yend = 45), lwd = 1.5, col = "#D240A7") + 
-        geom_segment(aes(x = D3_obs, y = 0, xend =D3_obs, yend = 45), lwd = 1.5, col = "#002984") + 
+        geom_segment(aes(x = D1_obs, y = 0, xend =D1_obs, yend = 45), lwd = 1.5, col = "#FFE072")+
+        geom_segment(aes(x = D2_obs, y = 0, xend =D2_obs, yend = 45), lwd = 1.5, col = "#D240A7") +
+        geom_segment(aes(x = D3_obs, y = 0, xend =D3_obs, yend = 45), lwd = 1.5, col = "#002984") +
         coord_cartesian(xlim = c(-.15, .15), ylim = c(0, 25)) + ylab(NULL)+
         theme_minimal() +
         theme(plot.title = element_text(lineheight=2, face="bold", hjust = .5, size = 17),
@@ -1197,28 +1254,28 @@ smoothed_stats <- function(dfo1, dfo2, dfp1, dfp2, bw, index, max.y = .45, unsmo
     }
     df_preds <- data.frame("preds" = c(dfo1, dfo2), "yrs" <- c(rep("0809", 166), rep("1013", 166)))
     gpreds <- ggplot(data = df_preds, aes(x = rep(200:365,2), y = preds, color = yrs, linetype = yrs)) + geom_line(lwd = 1.15) +
-      scale_color_manual(name = "Training\nYears", labels = c("2008-2009","2010-2013"), values = gg_color_hue(2)) + 
-      scale_linetype_manual(name = "Training\nYears", labels = c("2008-2009","2010-2013"), values = c("solid", "dashed")) + 
+      scale_color_manual(name = "Training\nYears", labels = c("2008-2009","2010-2013"), values = gg_color_hue(2)) +
+      scale_linetype_manual(name = "Training\nYears", labels = c("2008-2009","2010-2013"), values = c("solid", "dashed")) +
       coord_cartesian(xlim = c(200, 365), ylim = c(0, max.y)) +
-      scale_x_continuous(name = "Day of Year", breaks = seq(200, 365, 15)) + 
+      scale_x_continuous(name = "Day of Year", breaks = seq(200, 365, 15)) +
       scale_y_continuous(name = "Occurrence", breaks = seq(0, max.y, .05)) + ggtitle("Observed Prediction Curves") + theme_classic()+
       theme(plot.title = element_text(size = 20, hjust = .5), axis.title = element_text(size = 17),
             axis.text = element_text(size = 17), legend.background = element_rect(colour = "black", fill = "white"),
             legend.title = element_text(size = 17), legend.spacing.y = unit(1, "cm"),
-            legend.text = element_text(size = 15),legend.key.size = unit(2,"line")) 
-    
-    df_perm <- data.frame("preds" = c(dfp1[index]$p0809s$y, dfp2[index]$p1013s$y), 
+            legend.text = element_text(size = 15),legend.key.size = unit(2,"line"))
+
+    df_perm <- data.frame("preds" = c(dfp1[index]$p0809s$y, dfp2[index]$p1013s$y),
                           "yrs" <- c(rep("0809", 166), rep("1013", 166)))
     gperm <- ggplot(data = df_perm, aes(x = rep(200:365,2), y = preds, color = yrs, linetype = yrs)) + geom_line(lwd = 1.15) +
-      scale_color_manual(name = "Training\nYears", labels = c("2008-2009","2010-2013"), values = gg_color_hue(2)) + 
-      scale_linetype_manual(name = "Training\nYears", labels = c("2008-2009","2010-2013"), values = c("solid", "dashed")) + 
+      scale_color_manual(name = "Training\nYears", labels = c("2008-2009","2010-2013"), values = gg_color_hue(2)) +
+      scale_linetype_manual(name = "Training\nYears", labels = c("2008-2009","2010-2013"), values = c("solid", "dashed")) +
       coord_cartesian(xlim = c(200, 365), ylim = c(0, max.y)) +
-      scale_x_continuous(name = "Day of Year", breaks = seq(200, 365, 15)) + 
+      scale_x_continuous(name = "Day of Year", breaks = seq(200, 365, 15)) +
       scale_y_continuous(name = "Occurrence", breaks = seq(0, max.y, .05)) + ggtitle("Permuted Prediction Curves") + theme_classic()+
       theme(plot.title = element_text(size = 20, hjust = .5), axis.title = element_text(size = 17),
             axis.text = element_text(size = 17), legend.background = element_rect(colour = "black", fill = "white"),
             legend.title = element_text(size = 17), legend.spacing.y = unit(1, "cm"),
-            legend.text = element_text(size = 15),legend.key.size = unit(2,"line")) 
+            legend.text = element_text(size = 15),legend.key.size = unit(2,"line"))
     return(list("Predicted_Plot" = gpreds, "Permuted_Plot" = gperm))
   }
 }
@@ -1239,8 +1296,7 @@ stat_5$Density_Plot
 stat_5$Predicted_Plot
 stat_5$Permuted_Plot
 
-
-## Figure 7 (a,b)
+## Figure 7 (a,b) (DEPRECIATED DON'T RUN!)
 ## Max Temp only
 set.seed(10)
 stat_unsmooth <- smoothed_stats(p0809, p1013, preds_0809, preds_1013, 7.5, sample(1:1000,1), unsmooth = TRUE, max.y = .35)
@@ -1248,7 +1304,7 @@ stat_unsmooth$Predicted_Plot
 stat_unsmooth$Permuted_Plot
 stat_unsmooth$Density_Plot
 stat_unsmooth$D1to3Density
-p_vals <- data.frame("KS" = mean(stat_unsmooth$obs_stats[2] < stat_unsmooth$perm_dist$KS), 
+p_vals <- data.frame("KS" = mean(stat_unsmooth$obs_stats[2] < stat_unsmooth$perm_dist$KS),
                      "CvM" = (mean(stat_unsmooth$obs_stats[1] < stat_unsmooth$perm_dist$CvM)),
                      "D1" = (mean(stat_unsmooth$obs_stats[3] < stat_unsmooth$perm_dist$D1)),
                      "D2" = (mean(stat_unsmooth$obs_stats[4] > stat_unsmooth$perm_dist$D2)),
@@ -1257,7 +1313,7 @@ stat_unsmooth$Predicted_Plot
 stat_unsmooth$Permuted_Plot
 print(p_vals)
 
-## Figure 7 (c,d)
+## Figure 7 (c,d) (DEPRECIATED DON'T RUN!)
 ## DoY only
 set.seed(10)
 p0809s<- lapply(testpts, predict, object = observed_RF_dfs$rf.0809)
@@ -1265,9 +1321,9 @@ p1013s <- lapply(testpts, predict, object = observed_RF_dfs$rf.1013)
 p0809_npermdfs <- unlist(lapply(p0809s, FUN = mean))
 p1013_npermdfs <- unlist(lapply(p1013s, FUN = mean))
 
-stat_unsmooth_dfs <- smoothed_stats(p0809_npermdfs, p1013_npermdfs, p0809.dfs, p1013.dfs, 
+stat_unsmooth_dfs <- smoothed_stats(p0809_npermdfs, p1013_npermdfs, p0809.dfs, p1013.dfs,
                                     7.5, sample(1:1000,1), unsmooth = TRUE)
-p_vals_dfs <- data.frame("KS" = mean(stat_unsmooth_dfs$obs_stats[2] < stat_unsmooth_dfs$perm_dist$KS), 
+p_vals_dfs <- data.frame("KS" = mean(stat_unsmooth_dfs$obs_stats[2] < stat_unsmooth_dfs$perm_dist$KS),
                          "CvM" = (mean(stat_unsmooth_dfs$obs_stats[1] < stat_unsmooth_dfs$perm_dist$CvM)),
                          "D1" = (mean(stat_unsmooth_dfs$obs_stats[3] < stat_unsmooth_dfs$perm_dist$D1)),
                          "D2" = (mean(stat_unsmooth_dfs$obs_stats[4] > stat_unsmooth_dfs$perm_dist$D2)),
@@ -1275,13 +1331,13 @@ p_vals_dfs <- data.frame("KS" = mean(stat_unsmooth_dfs$obs_stats[2] < stat_unsmo
 stat_unsmooth_dfs$Density_Plot
 stat_unsmooth_dfs$Predicted_Plot
 stat_unsmooth_dfs$Permuted_Plot
-stat_smooth_dfs <- smoothed_stats(p0809_npermdfs, p1013_npermdfs, p0809.dfs, p1013.dfs, 
+stat_smooth_dfs <- smoothed_stats(p0809_npermdfs, p1013_npermdfs, p0809.dfs, p1013.dfs,
                                   7.5, sample(1:1000,1))
 stat_smooth_dfs$Predicted_Plot
 stat_smooth_dfs$Permuted_Plot
 
 
-## FIGURE 6 (a,b)
+## FIGURE 6 (a,b) (DEPRECIATED DON'T RUN!)
 ### Full Model
 
 p0809s.full<- lapply(testpts, predict, object = observed_RF_full$rf.0809)
@@ -1290,9 +1346,9 @@ p0809_nperm.full <- unlist(lapply(p0809s.full, FUN = mean))
 p1013_nperm.full <- unlist(lapply(p1013s.full, FUN = mean))
 
 set.seed(10)
-stat_unsmooth_full <- smoothed_stats(p0809_nperm.full, p1013_nperm.full, p0809.full, p1013.full, 
+stat_unsmooth_full <- smoothed_stats(p0809_nperm.full, p1013_nperm.full, p0809.full, p1013.full,
                                      7.5, sample(1:1000,1), unsmooth = TRUE)
-p_vals_full <- data.frame("KS" = mean(stat_unsmooth_full$obs_stats[2] < stat_unsmooth_full$perm_dist$KS), 
+p_vals_full <- data.frame("KS" = mean(stat_unsmooth_full$obs_stats[2] < stat_unsmooth_full$perm_dist$KS),
                           "CvM" = (mean(stat_unsmooth_full$obs_stats[1] < stat_unsmooth_full$perm_dist$CvM)),
                           "D1" = (mean(stat_unsmooth_full$obs_stats[3] < stat_unsmooth_full$perm_dist$D1)),
                           "D2" = (mean(stat_unsmooth_full$obs_stats[4] > stat_unsmooth_full$perm_dist$D2)),
@@ -1316,8 +1372,398 @@ print(xp2, include.rownames = F)
 xp3 <- xtable(p_vals_full, digits = 4)
 print(xp3, include.rownames = F)
 
+# Functional Permutation Test ---------------------------------------------
+
+set.seed(1994)
+# Loading stuff
+source('C:/Users/drain/Box Sync/Mentch Coleman Shared/RF Permutation Tests/R Stuff/MSE_Test_File.R')
+library(randomForest)
+library(plyr)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+load("C:/Users/drain/OneDrive/eBird project/ts.bcr30fall.RData")
+load("C:/Users/drain/OneDrive/eBird project/ts.NN_1013.RDA")
+load("C:/Users/drain/OneDrive/eBird project/SRD_tmax_1980-2007_200-365.RData")
+load("C:/Users/drain/OneDrive/eBird project/surfing_eBird.srd.3km.locations.RData")
+load("C:/Users/drain/OneDrive/eBird project/surfing_eBird.srd.3km.data.RData")
+
+# Filtering stuff
+LID <- 1:length(dat[,1]) ## Creating location indices for easy subsetting.
+locations <- data.frame(locations, LID)
+loc_NE <- locations[locations$lon > -78 & locations$lat > 37 & locations$lat < 44,]
+srd_NE <- srd[[2]][loc_NE$LID,]
+names(srd_NE) <- names(ts.bcr30fall)[11:26]
+places <- loc_NE$LID
+dat2 <- dat[places,]
+
+
+# DoY Model Testing ------------------------------------------------------
+test_gen_dfs <- function(nsample,day){
+  samp_ind <- sample(1:34936, nsample, replace = FALSE)
+  others <- srd_NE[samp_ind,]
+  test <- data.frame(  "I.stationary" = rep(1, nsample*1),
+                       "time" = rep(7.00, nsample*1),
+                       "eff.hours" = rep(0.8405, nsample*1),
+                       "eff.dist" = rep(1, nsample*1),
+                       "no.obs" = rep(1, nsample*1),
+                       others,
+                       "dfs" = (day+199)/365,
+                       "DoY" = as.character(rep(day + 199, nsample)))
+  return(test[complete.cases(test),])
+}
+
+# Training sets
+ts.0809.dfs <- ts.bcr30fall %>% filter(year < 2010) %>% select(-c(year, date, FID, y, temp.max, lat, lon))
+ts.1013.dfs <- ts.NN_1013 %>% select(-c(year, date, FID, y, temp.max, lat, lon))
+
+# Models
+m.0809.dfs <- bag.s(X = ts.0809.dfs %>% select(-occur), y = ts.0809.dfs$occur, base.learner = "rtree", mtry = ncol(ts.0809.dfs)/3,
+                    ntree = 1000, k = nrow(ts.0809.dfs)^.55, ranger = F)
+m.1013.dfs <- bag.s(X = ts.1013.dfs %>% select(-occur), y = ts.1013.dfs$occur, base.learner = "rtree", mtry = ncol(ts.0809.dfs)/3,
+                    ntree = 1000, k = nrow(ts.1013.dfs)^.55, ranger = F)
+
+# Full (DoY & Max Temp) Model Testing ------------------------------------------------------
+
+test_gen_full <-function(nsample,day){
+  samp_ind <- sample(1:34936, nsample, replace = FALSE)
+  others <- srd_NE[samp_ind,]
+  temps <- dat2[samp_ind, day]
+  others <- srd_NE[samp_ind,]
+  test <- data.frame(  "I.stationary" = rep(1, nsample*1),
+                       "time" = rep(7.00, nsample*1),
+                       "eff.hours" = rep(0.8405, nsample*1),
+                       "eff.dist" = rep(1, nsample*1),
+                       "no.obs" = rep(1, nsample*1),
+                       others,
+                       "temp.max" = temps,
+                       "dfs" = (day+199)/365,
+                       "DoY" = as.character(rep(day + 199, nsample)))
+  return(test[complete.cases(test),])
+}
+
+# Training sets
+ts.0809.full <- ts.bcr30fall %>% filter(year < 2010) %>% select(-c(year, date, FID, y, lat, lon))
+ts.1013.full <- ts.NN_1013 %>% select(-c(year, date, FID, y, lat, lon))
+
+# Models
+m.0809.full <- bag.s(X = ts.0809.full %>% select(-occur), y = ts.0809.full$occur, base.learner = "rtree", mtry = ncol(ts.0809.dfs)/3,
+                     ntree = 1000, k = nrow(ts.1013.dfs)^.55, ranger = F)
+m.1013.full <- bag.s(X = ts.1013.full %>% select(-occur), y = ts.1013.full$occur, base.learner = "rtree", mtry = ncol(ts.0809.dfs)/3,
+                     ntree = 1000, k = nrow(ts.1013.dfs)^.55, ranger = F)
+# Max Temp Model Testing --------------------------------------------------
+
+test_gen_mtemp <- function(nsample,day){
+  samp_ind <- sample(1:34936, nsample, replace = FALSE)
+  temps <- dat2[samp_ind, day]
+  others <- srd_NE[samp_ind,]
+  test <- data.frame(  "I.stationary" = rep(1, nsample*1),
+                       "time" = rep(7.00, nsample*1),
+                       "eff.hours" = rep(0.8405, nsample*1),
+                       "eff.dist" = rep(1, nsample*1),
+                       "no.obs" = rep(1, nsample*1),
+                       others,
+                       "temp.max" = temps,
+                       "DoY" = as.character(rep(day + 199, nsample)))
+  return(test[complete.cases(test),])
+}
+
+# Training sets
+ts.0809.mtemp <- ts.bcr30fall %>% filter(year < 2010) %>% select(-c(year, date, FID, dfs, y, lat, lon))
+ts.1013.mtemp <- ts.NN_1013 %>% select(-c(year, date, FID, dfs, y, lat, lon))
+
+# Models
+m.0809.mtemp <- bag.s(X = ts.0809.mtemp %>% select(-occur), y = ts.0809.mtemp$occur, base.learner = "rtree", mtry = ncol(ts.0809.dfs)/3,
+                      ntree = 1000, k = nrow(ts.1013.dfs)^.55, ranger = F)
+m.1013.mtemp <- bag.s(X = ts.1013.mtemp %>% select(-occur), y = ts.1013.mtemp$occur, base.learner = "rtree", mtry = ncol(ts.0809.dfs)/3,
+                      ntree = 1000, k = nrow(ts.1013.dfs)^.55, ranger = F)
+# Creating Test Sets ------------------------------------------------------
+
+set.seed(1994)
+testpts_dfs <- list()
+testpts_full <- list()
+testpts_mtemp <- list()
+for(day in 1:166){
+  testpts_dfs[[day]] <- test_gen_dfs(50,day)
+  testpts_full[[day]] <- test_gen_full(50,day)
+  testpts_mtemp[[day]] <- test_gen_mtemp(50,day)
+}
+
+library(plyr)
+testpts_full <- ldply(testpts_full, data.frame)
+testpts_dfs <- ldply(testpts_dfs, data.frame)
+testpts_mtemp <- ldply(testpts_mtemp, data.frame)
+
+
+
+# Defining a TestPt Function ----------------------------------------------
+# - one for KS and one for CvM
+#P.0809.dfs <- data.frame(lapply(m.0809.dfs, FUN = function(x) predict(x, newdata = testpts_dfs)),
+# "DoY" = as.character(sort(rep(200:365, 100))))
+#names(P.0809.dfs) <- c(paste(c("T"), 1:1000, sep = ""), "DoY")
+
+KS_f <- function(m1, m2, X.test, nPerm = 1000, permInd = 50){
+  nmod <- length(m1)
+  cat("Making 1st Predictions .... \n")
+  #P1 <- data.frame(lapply(m1, FUN = function(x) predict(x, newdata = X.test %>% select(-DoY))))
+  m1_temp <- do.call(combine, m1)
+  P1 <- data.frame(predict(m1_temp, newdata = X.test %>% select(-DoY), predict.all = T))[,-1]
+  cat("Making 2nd Predictions .... \n")
+  #P2 <- data.frame(lapply(m2, FUN = function(x) predict(x, newdata = X.test %>% select(-DoY))))
+  m2_temp <- do.call(combine, m2)
+  P2 <- data.frame(predict(m2_temp, newdata = X.test %>% select(-DoY), predict.all = T))[,-1]
+
+  names(P1) <- paste(c("T"), 1:1000, sep = "")
+  names(P2) <- paste(c("T"), 1:1000, sep = "")
+  #P1 <- data.frame(P1, "DoY" = as.character(sort(rep(200:365, 100))))
+  #P2 <- data.frame(P2, "DoY" = as.character(sort(rep(200:365, 100))))
+
+  subforests <- lapply(as.list(seq(1, nmod, by = 50)), FUN = function(x) paste(c("T"), x:(x+49), sep = ""))
+
+  subP1 <- data.frame(matrix(nrow = 166, ncol = length(subforests)))
+  subP2 <- data.frame(matrix(nrow = 166, ncol = length(subforests)))
+
+  for(i in 1:length(subforests)){
+    P1.temp <- P1 %>% select(subforests[[i]]) %>% rowMeans() %>% data.frame() %>%
+      dplyr::rename(preds = ".") %>%
+      mutate(DoY = X.test$DoY) %>% group_by(DoY) %>%
+      dplyr::summarise(daily_pred = mean(preds)) %>% select(daily_pred)
+    P2.temp <- P2 %>% select(subforests[[i]]) %>% rowMeans() %>% data.frame() %>%
+      dplyr::rename(preds = ".") %>%
+      mutate(DoY = X.test$DoY) %>% group_by(DoY) %>%
+      dplyr::summarise(daily_pred = mean(preds)) %>% select(daily_pred)
+    subP1[,i] <- P1.temp
+    subP2[,i] <- P2.temp
+  }
+  # Pooling these for permutations later
+  subPool <- cbind(subP1, subP2)
+  names(subP1) <- paste(c("RF"), 1:(nmod/50), sep = "")
+  names(subP2) <- paste(c("RF"), 1:(nmod/50), sep = "")
+
+  RFP1 <- rowMeans(subP1) #RF1 daily predictions - 1000 trees
+  RFP2 <- rowMeans(subP2) #RF2 daily predictions - 1000 trees
+
+  # Defining the time periods of interest
+  T1 <- 1:65
+  T2 <- 66:110
+  T3 <- 110:166
+  # Original test statistics
+  KS0 <- max(abs(RFP2 - RFP1))
+  CvM0 <- mean((RFP2 - RFP1)^2)
+  D1_0 <- mean(RFP1[T1] - RFP2[T1])
+  D2_0 <- mean(RFP1[T2] - RFP2[T2])
+  D3_0 <- mean(RFP1[T3] - RFP2[T3])
+
+
+  # Creating the permutation distribution
+  KS <- c(); CvM <- c(); D1 <- c(); D2 <- c(); D3 <- c()
+  for(i in 1:nPerm){
+    inds <- sample(1:ncol(subPool), ncol(subPool)/2)
+    subP1_perm <- subPool[, inds]
+    subP2_perm <- subPool[,-inds]
+
+    RFP1_perm <- rowMeans(subP1_perm)
+    RFP2_perm <- rowMeans(subP2_perm)
+
+    KS[i] <- max(abs(RFP2_perm - RFP1_perm))
+    CvM[i] <- mean((RFP2_perm - RFP1_perm)^2)
+    D1[i] <- mean(RFP1_perm[T1] - RFP2_perm[T1])
+    D2[i] <- mean(RFP1_perm[T2] - RFP2_perm[T2])
+    D3[i] <- mean(RFP1_perm[T3] - RFP2_perm[T3])
+
+
+
+    if(i == permInd){
+      perm_func_out <- data.frame("Model1" = RFP1_perm, "Model2" = RFP2_perm)
+      perm_inds <- inds
+    }
+  }
+  par(mfrow = c(1,2))
+  hist(CvM, col = 'grey', breaks = ceiling(sqrt(nPerm)), xlim = c(0, max(c(CvM, CvM0)) + sd(CvM)))
+  abline(v = CvM0, col = 'red', lwd = 1.15)
+
+  hist(KS, col = 'grey', breaks = ceiling(sqrt(nPerm)), xlim = c(0, max(c(KS, KS0)) + sd(KS)))
+  abline(v = KS0, col = 'red', lwd = 1.15)
+
+  out <- list("Original_RF" = data.frame("Model1" = RFP1, "Model2" = RFP2),
+              "OriginalPreds" = list(subP1, subP2),
+              "Permuted RF" = perm_func_out,
+              "Group1_Indicators" = perm_inds,
+              "KS0" = KS0,
+              "CvM0" = CvM0,
+              "D1_0" = D1_0,
+              "D2_0" = D2_0,
+              "D3_0" = D3_0,
+              "PvalKS" = mean(c(KS0 < KS, 1)),
+              "PvalCvM" = mean(c(CvM0 < CvM, 1)),
+              "PvalD1" = mean(D1_0 < D1),
+              "PvalD2" = mean(D2_0 > D2),
+              "PvalD3" = mean(abs(D3_0) > abs(D3)))
+  out
+}
+
+res.dfs <- KS_f(m1 = m.0809.dfs, m2 = m.1013.dfs, X.test = testpts_dfs, nPerm = 1000)
+res.full <- KS_f(m1 = m.0809.full, m2 = m.1013.full, X.test = testpts_full, nPerm = 1000)
+res.maxtemp <- KS_f(m1 = m.0809.mtemp, m2 = m.1013.mtemp, X.test = testpts_mtemp, nPerm = 1000)
+
+
+## Now plotting the predicted versus the original
+library(tidyr)
+functional_plot <- function(obj, bw){
+
+  ## Plotting the original curves
+  obj_smooth0809 <- ksmooth(x = 1:166, y = obj$Original_RF$Model1, bandwidth  = bw)$y
+  obj_smooth1013 <- ksmooth(x = 1:166, y = obj$Original_RF$Model2, bandwidth  = bw)$y
+
+  orig_sm0809 <- data.frame("preds" = obj_smooth0809, Years = "08-09",
+                            Type = "bigRF", grp = "0809mean", days = 200:365)
+  orig_sm1013 <- data.frame("preds" = obj_smooth1013, Years = "10-13",
+                            Type = "bigRF", grp = "1013mean", days = 200:365)
+
+  origp1 <- obj$OriginalPreds[[1]] %>% gather(key = "RFID", value = "preds", RF1:RF20) %>%
+    mutate(Years = "08-09", Type = "smallRF", days = 200:365) %>% mutate(grp = paste(RFID, "_m1", sep = "")) %>%
+    select(-RFID)
+  origp2 <- obj$OriginalPreds[[2]] %>% gather(key = "RFID", value = "preds", RF1:RF20)%>%
+    mutate(Years = "10-13", Type = "smallRF", days = 200:365) %>% mutate(grp = paste(RFID, "_m2", sep = "")) %>%
+    select(-RFID)
+
+  orig_combined <- rbind(origp1, origp2, orig_sm0809, orig_sm1013)
+
+  max.y <- max(cbind(obj$OriginalPreds[[1]], obj$OriginalPreds[[2]]))
+  p_original <- ggplot(data = orig_combined, aes(x = days, y = preds,
+                                                 col = Years, group = grp, size = Type, alpha = Type)) + geom_line() +
+    scale_alpha_manual(name = "Number of\nTrees", values = c(1, .25), labels = c(1000, 50)) +
+    scale_size_manual(name = "Number of\nTrees", values = c(1.35, .55),labels = c(1000, 50)) +
+    scale_x_continuous(name = "Day of Year", breaks = seq(200, 365, 25)) +
+    scale_y_continuous(name = "Occurrence", breaks = seq(0,.35, .05)) +
+    coord_cartesian(xlim = c(200, 365), ylim = c(0, max.y + .01)) +
+    ggtitle("Original Prediction Curves") + theme_bw()+
+    theme(plot.title = element_text(size = 20, hjust = .5), axis.title = element_text(size = 17),
+          axis.text = element_text(size = 17), legend.background = element_rect(colour = "black", fill = "white"),
+          legend.title = element_text(size = 17), legend.spacing.y = unit(.25, "cm"),
+          legend.text = element_text(size = 15),legend.key.size = unit(2,"line"))
+  plot(p_original)
+
+  ## Plotting the permuted curves
+  obj_p_smooth0809 <- ksmooth(x = 1:166, y = obj$`Permuted RF`$Model1, bandwidth  = bw)$y
+  obj_p_smooth1013 <- ksmooth(x = 1:166, y = obj$`Permuted RF`$Model2, bandwidth  = bw)$y
+
+  orig_sm_p0809 <- data.frame("preds" = obj_p_smooth0809, Years = "08-09",
+                              Type = "bigRF", grp = "0809mean", days = 200:365)
+  orig_sm_p1013 <- data.frame("preds" = obj_p_smooth1013, Years = "10-13",
+                              Type = "bigRF", grp = "1013mean", days = 200:365)
+
+  pooled_preds <- cbind(obj$OriginalPreds[[1]], obj$OriginalPreds[[2]])
+  perm_p1 <- pooled_preds[,obj$Group1_Indicators]
+  perm_p2 <- pooled_preds[,-obj$Group1_Indicators]
+
+  perm_p1 <- perm_p1 %>% gather(key = "RFID", value = "preds") %>%
+    mutate(Years = "08-09", Type = "smallRF", days = 200:365) %>% mutate(grp = paste(RFID, "_m1", sep = "")) %>%
+    select(-RFID)
+  perm_p2 <- perm_p2 %>% gather(key = "RFID", value = "preds")%>%
+    mutate(Years = "10-13", Type = "smallRF", days = 200:365) %>% mutate(grp = paste(RFID, "_m2", sep = "")) %>%
+    select(-RFID)
+
+  perm_combined <- rbind(orig_sm_p0809, orig_sm_p1013, perm_p1, perm_p2)
+
+  p_perm <- ggplot(data = perm_combined, aes(x = days, y = preds,
+                                             col = Years, group = grp, size = Type, alpha = Type)) + geom_line() +
+    scale_alpha_manual(name = "Number of\nTrees", values = c(1, .25), labels = c(1000, 50)) +
+    scale_size_manual(name = "Number of\nTrees", values = c(1.35, .55),labels = c(1000, 50)) +
+    scale_x_continuous(name = "Day of Year", breaks = seq(200, 365, 25)) +
+    scale_y_continuous(name = "Occurrence", breaks = seq(0,.35, .05)) +
+    coord_cartesian(xlim = c(200, 365), ylim = c(0, max.y + .01)) +
+    ggtitle("Permuted Prediction Curves") + theme_bw()+
+    theme(plot.title = element_text(size = 20, hjust = .5), axis.title = element_text(size = 17),
+          axis.text = element_text(size = 17), legend.background = element_rect(colour = "black", fill = "white"),
+          legend.title = element_text(size = 17), legend.spacing.y = unit(.25, "cm"),
+          legend.text = element_text(size = 15),legend.key.size = unit(2,"line"))
+  plot(p_perm)
+
+  out <- list("Original_plot" = p_original,
+              "Permuted_plot" = p_perm)
+  out
+}
+
+
+# Figures 6, 7 ------------------------------------------------------------
+
+plot_full <- functional_plot(obj = res.full, bw = 7.5) # Figure 6, a,b
+plot_dfs <- functional_plot(obj = res.dfs, bw = 7.5) # Figure 7, a, b
+plot_mtemp <- functional_plot(obj = res.maxtemp, bw = 7.5) #Figure 7, c, d
+
+# Saving the plots
+pdf("C:/Users/drain/Box Sync/Ebird Tree Swallow Project/FunctionalPlots/full_og.pdf",width=9,height=4.5,paper='special')
+plot_full$Original_plot
+dev.off()
+pdf("C:/Users/drain/Box Sync/Ebird Tree Swallow Project/FunctionalPlots/full_pm.pdf",width=9,height=4.5,paper='special')
+plot_full$Permuted_plot
+dev.off()
+
+pdf("C:/Users/drain/Box Sync/Ebird Tree Swallow Project/FunctionalPlots/dfs_og.pdf",width=9,height=4.5,paper='special')
+plot_dfs$Original_plot
+dev.off()
+pdf("C:/Users/drain/Box Sync/Ebird Tree Swallow Project/FunctionalPlots/dfs_pm.pdf",width=9,height=4.5,paper='special')
+plot_dfs$Permuted_plot
+dev.off()
+
+pdf("C:/Users/drain/Box Sync/Ebird Tree Swallow Project/FunctionalPlots/mtemp_og.pdf",width=9,height=4.5,paper='special')
+plot_mtemp$Original_plot
+dev.off()
+pdf("C:/Users/drain/Box Sync/Ebird Tree Swallow Project/FunctionalPlots/mtemp_pm.pdf",width=9,height=4.5,paper='special')
+plot_mtemp$Permuted_plot
+dev.off()
+
+# Getting out the raw statistic values
+stat_table <- data.frame("Model" = c("DoY Only", "Max Temp Only", "Full"),
+                         rbind(c(CvM = res.dfs$CvM0, KS = res.dfs$KS0, D1 = res.dfs$D1_0, D2 = res.dfs$D2_0, D3 = res.dfs$D3_0),
+                               c(CvM = res.maxtemp$CvM0, KS = res.maxtemp$KS0, D1 = res.maxtemp$D1_0, D2 = res.maxtemp$D2_0, D3 = res.maxtemp$D3_0),
+                               c(CvM = res.full$CvM0, KS = res.full$KS0, D1 = res.full$D1_0, D2 = res.full$D2_0, D3 = res.full$D3_0)))
+
+print(xtable(stat_table, digits = 5), include.rownames = F)
+
+# % latex table generated in R 3.5.1 by xtable 1.8-3 package
+# % Wed Jan 09 14:21:02 2019
+# \begin{table}[ht]
+# \centering
+# \begin{tabular}{lrrrrr}
+# \hline
+# Model & CvM & KS & D1 & D2 & D3 \\
+# \hline
+# DoY Only & 0.00015 & 0.02718 & 0.01530 & 0.00037 & 0.00096 \\
+# Max Temp Only & 0.00058 & 0.05329 & 0.03651 & -0.00170 & -0.00533 \\
+# Full & 0.00035 & 0.05112 & 0.02419 & -0.00741 & -0.00816 \\
+# \hline
+# \end{tabular}
+# \end{table}
+
+# Getting out the p-values
+p_table <- data.frame("Model" = c("DoY Only", "Max Temp Only", "Full"),
+                      rbind(c(CvM = res.dfs$PvalCvM, KS = res.dfs$PvalKS, D1 = res.dfs$PvalD1, D2 = res.dfs$PvalD2, D3 = res.dfs$PvalD3),
+                            c(CvM = res.maxtemp$PvalCvM, KS = res.maxtemp$PvalKS, D1 = res.maxtemp$PvalD1, D2 = res.maxtemp$PvalD2, D3 = res.maxtemp$PvalD3),
+                            c(CvM = res.full$PvalCvM, KS = res.full$PvalKS, D1 = res.full$PvalD1, D2 = res.full$PvalD2, D3 = res.full$PvalD3)))
+library(xtable)
+print(xtable(p_table, digits = 5), include.rownames = F)
+
+# % latex table generated in R 3.5.1 by xtable 1.8-3 package
+# % Sun Nov 18 15:09:40 2018
+# \begin{table}[ht]
+# \centering
+# \begin{tabular}{lrrrrr}
+# \hline
+# Model & CvM & KS & D1 & D2 & D3 \\
+# \hline
+# DoY Only & 0.05494505 & 0.12287712 & 0.03400000 & 0.54400000 & 0.16300000 \\
+# Max Temp Only & 0.00099900 & 0.00099900 & 0.00000000 & 0.29900000 & 0.77500000 \\
+# Full & 0.00799201 & 0.00199800 & 0.00700000 & 0.10300000 & 0.95400000 \\
+# \hline
+# \end{tabular}
+# \end{table}
+
+
+
 ####################################################################
-## V LOCAL TESTING
+## V LOCAL TESTING ---------------------------------------------
 ####################################################################
 ## Part (I) - spatially stratifying points
 
@@ -1343,7 +1789,7 @@ load("C:/Users/drain/OneDrive/eBird project/surfing_eBird.srd.3km.locations.RDat
 loc_NE <- locations[locations$lon > -78 & locations$lat > 36.5 & locations$lat < 44,]
 dMtemp <- data.frame(dat[loc_NE$LID,])
 dMlist <- list(); for(i in 1:165){
-  dMlist[[i]] <- data.frame(DM.day <- data.frame("mtemp" = dMtemp[,i], 
+  dMlist[[i]] <- data.frame(DM.day <- data.frame("mtemp" = dMtemp[,i],
                                                  "lon" = loc_NE$lon, "lat" = loc_NE$lat))
   coordinates(dMlist[[i]])=~lon+lat
   proj4string(dMlist[[i]])=CRS(crs1) # set it to lat-long
@@ -1366,30 +1812,30 @@ save(ts.bcfa, file = "ts.bcrfall30_anomaly_raster.RDA")
 
 load("C:/Users/drain/OneDrive/eBird project/GIS_Stuff/ts.bcrfall30_anomaly_raster.RDA", verbose = T)
 ## Smoothing
-yrly_anom <- ts.bcfa %>%  dplyr::group_by(year, DOF) %>% dplyr::summarise(tanomday = mean(t_anomaly)) %>% 
-  mutate(yearIND = ifelse(year %in% 2008:2009, "08-09", "10-13")) %>% 
-  group_by(yearIND, DOF) %>% dplyr::summarise(tanomday2 = mean(tanomday)) %>% 
+yrly_anom <- ts.bcfa %>%  dplyr::group_by(year, DOF) %>% dplyr::summarise(tanomday = mean(t_anomaly)) %>%
+  mutate(yearIND = ifelse(year %in% 2008:2009, "08-09", "10-13")) %>%
+  group_by(yearIND, DOF) %>% dplyr::summarise(tanomday2 = mean(tanomday)) %>%
   mutate(smoothed_anom = ksmooth(x=DOF, y = tanomday2, bandwidth = 18.5, kernel = "normal")$y)
 
-## Smoothing overall    
-ovr_anom <- ts.bcfa %>%  dplyr::group_by(DOF) %>% dplyr::summarise(tanomday = mean(t_anomaly)) %>% 
+## Smoothing overall
+ovr_anom <- ts.bcfa %>%  dplyr::group_by(DOF) %>% dplyr::summarise(tanomday = mean(t_anomaly)) %>%
   mutate(smoothed_anom = ksmooth(x=DOF, y = tanomday, bandwidth = 18.5, kernel = "normal")$y)
 
 ## Plotting
-g.anom <- ggplot(data = yrly_anom, aes( x= 200+DOF, y = smoothed_anom)) + 
-  geom_line(aes(col = yearIND, linetype = yearIND), size = 1.1) +geom_hline(aes(yintercept = 0)) + theme_classic() + 
+g.anom <- ggplot(data = yrly_anom, aes( x= 200+DOF, y = smoothed_anom)) +
+  geom_line(aes(col = yearIND, linetype = yearIND), size = 1.1) +geom_hline(aes(yintercept = 0)) + theme_classic() +
   geom_line(data = ovr_anom, aes(x = 200 + DOF, y = smoothed_anom), size = 1, col = 'gray', alpha = .75) +
   scale_x_continuous(name = "Day of Year", breaks =seq(200, 365, 15), labels = seq(200, 365, 15)) +
-  scale_y_continuous(name = "Max Temp Anomaly, Degrees Celsius", breaks = seq(-8, 5, 1), labels = seq(-8, 5, 1)) + 
-  scale_color_manual(name = "Year\nGrouping\n", labels = c("2008-\n2009\n", "2010-\n2013"), values = gg_color_hue(2)) + 
-  scale_linetype_manual(name = "Year\nGrouping\n", labels = c("2008-\n2009\n", "2010-\n2013"), values = c("solid", "dashed")) + 
+  scale_y_continuous(name = "Max Temp Anomaly, Degrees Celsius", breaks = seq(-8, 5, 1), labels = seq(-8, 5, 1)) +
+  scale_color_manual(name = "Year\nGrouping\n", labels = c("2008-\n2009\n", "2010-\n2013"), values = gg_color_hue(2)) +
+  scale_linetype_manual(name = "Year\nGrouping\n", labels = c("2008-\n2009\n", "2010-\n2013"), values = c("solid", "dashed")) +
   ggtitle("Max Temp Anomaly, by year") +
   theme(plot.title = element_text(lineheight=2, face="bold", hjust = .5, size = 17),
         axis.text.x = element_text(size = 15), axis.title.x = element_text(size = 15),
         axis.text.y = element_text(size = 15), axis.title.y = element_text(size = 15),
         legend.background = element_rect(colour = "black", fill = "white"),
         legend.title = element_text(size = 13), legend.spacing.y = unit(1, "cm"),
-        legend.text = element_text(size = 12), legend.key.size = unit(2.5,"line")) 
+        legend.text = element_text(size = 12), legend.key.size = unit(2.5,"line"))
 
 g.anom
 
@@ -1456,17 +1902,17 @@ tspts.gg <- ldply(lapply(ts_testing, data.frame), data.frame) %>% mutate(ID = as
 
 
 #tbubbles.gg <- lapply(t_bubbles, writeOGR_apply)
-gmap2 <- ggmap(gmap1) + 
-  geom_polygon(aes(x = long, y = lat, group = group), data = FWS2, fill = 'forestgreen', alpha = .5, size = 0) + 
+gmap2 <- ggmap(gmap1) +
+  geom_polygon(aes(x = long, y = lat, group = group), data = FWS2, fill = 'forestgreen', alpha = .5, size = 0) +
   geom_point(aes(x = lon, y =lat, fill = ID), data = tspts.gg, colour="black",pch=21, size=2.5, alpha = .65) +
-  xlab("Longitude") + ylab("Latitude") + 
+  xlab("Longitude") + ylab("Latitude") +
   scale_fill_discrete(name = "Testing\nLocation") + ggtitle("Locations of Testing Points")+
   theme(plot.title = element_text(lineheight=2, face="bold", hjust = .5, size = 17),
         axis.text.x = element_text(size = 10), axis.title.x = element_text(size = 15),
         axis.text.y = element_text(size = 10), axis.title.y = element_text(size = 15),
         legend.background = element_rect(colour = "black", fill = "white"),
         legend.title = element_text(size = 13), legend.spacing.y = unit(1, "cm"),
-        legend.text = element_text(size = 12)) 
+        legend.text = element_text(size = 12))
 gmap2
 
 
@@ -1511,20 +1957,20 @@ Main_f <- function(tr_o, tr_p ,test,verbose=TRUE,k=floor(sqrt(dim(tr_o1)[1])),nx
   # maxcompete -- number of "back-up" splits to keep track of
   # maxsurrogate -- number of surrogate splits to consider
   # usesurrogate -- if nonzero, this helps deal with missing data
-  
+
   # Defining rpart Control Parameters
   control.sim <- rpart.control(minsplit=minsplit,maxcompete=maxcompete,
                                maxsurrogate=maxsurrogate,usesurrogate=usesurrogate)
-  
+
   # Defining the size of the training set and ensemble
   n <- dim(tr_p)[1]
   m <- nx1*nmc
   test_d <- dim(test)[1]
-  
+
   # Defining the reduced data:
   #train.red <- train[,-testvars]
   # test.red <- test[,-testvars]
-  
+
   # Build the trees and estimate the parameters:
   pred.all <- matrix(0,nrow=1,ncol=test_d)
   diff.all <- matrix(0,nrow=1,ncol=test_d)
@@ -1537,7 +1983,7 @@ Main_f <- function(tr_o, tr_p ,test,verbose=TRUE,k=floor(sqrt(dim(tr_o1)[1])),nx
     pred.diff <- matrix(0,nrow=nmc,ncol=test_d)
     for (j in 1:nmc) {
       ind <- c(ind.x1,sample((1:dim(tr_o)[1])[-ind.x1],k-1,replace=FALSE))
-      ss.full <- tr_o[ind,]	
+      ss.full <- tr_o[ind,]
       ss.red <- tr_p[ind,]
       tree.full <- rpart(occur~.,data=ss.full,control=control.sim)
       tree.red <- rpart(occur~.,data=ss.red,control=control.sim)
@@ -1554,26 +2000,26 @@ Main_f <- function(tr_o, tr_p ,test,verbose=TRUE,k=floor(sqrt(dim(tr_o1)[1])),nx
   }
   pred.all <- pred.all[-1,]
   diff.all <- diff.all[-1,]
-  
+
   mean.full <- apply(pred.all,2,mean)
   mean.diff <- apply(diff.all,2,mean)
-  
+
   zeta1.full <- apply(cond.exp.full,2,var)
   zeta1.diff <- cov(cond.exp.diff)
-  
+
   zetak.full <- apply(pred.all,2,var)
   zetak.diff <- cov(diff.all)
-  
+
   sd.full <- sqrt((m/n)*((k^2)/m)*zeta1.full + (1/m)*zetak.full)
   lbounds.full <- qnorm(0.025,mean=mean.full,sd=sd.full)
   ubounds.full <- qnorm(0.975,mean=mean.full,sd=sd.full)
-  
+
   sd.diff <- sqrt((m/n)*((k^2)/m)*zeta1.diff + (1/m)*zetak.diff)
   lbounds.diff <- qnorm(0.025,mean=mean.diff,sd=sd.diff)
   ubounds.diff <- qnorm(0.975,mean=mean.diff,sd=sd.diff)
-  
+
   cov.diff <- (m/n)*((k^2)/m)*zeta1.diff + (1/m)*zetak.diff
-  
+
   tstat <- t(mean.diff) %*% ginv((m/n)*((k^2)/m)*zeta1.diff + (1/m)*zetak.diff) %*% mean.diff
   pval <- 1-pchisq(tstat,df=test_d)
   # lbounds -- lower bounds for the confidence intervals
@@ -1607,7 +2053,7 @@ save(ts_clean, file = "CleanedTest_ANOM_25pts.RDA")
 
 test_results_anom_rast25pts <- list()
 for(i in 1:6){
-  test_results_anom_rast25pts[[i]] <- Main_f(tr_o = tr_o1, tr_p = tr_p1, test = ts_clean[[i]], 
+  test_results_anom_rast25pts[[i]] <- Main_f(tr_o = tr_o1, tr_p = tr_p1, test = ts_clean[[i]],
                                              verbose=FALSE,k=160,nx1=250,nmc=5000,minsplit=10,
                                              maxcompete=0,maxsurrogate=0,usesurrogate=0)
   print(test_results_anom_rast25pts[[i]]$tstat)
@@ -1621,7 +2067,7 @@ save(test_results_anom_rast25pts, file = "tresults_25pts.RDA")
 
 library(xtable)
 save(test_results_anom_rast2, file ="eBird_anom_raster2_1.RDA")
-tstats <- c();pvals <- c();for(i in 1:6){tstats[i]<- test_results_anom_rast25pts[[i]]$tstat; 
+tstats <- c();pvals <- c();for(i in 1:6){tstats[i]<- test_results_anom_rast25pts[[i]]$tstat;
 pvals[i] <- test_results_anom_rast25pts[[i]]$pval}
 tstats_df<- data.frame("Testing Zone" = 1:6, tstats, pvals)
 write.csv(tstats_df, "test_statistics_raster25pts.csv")
